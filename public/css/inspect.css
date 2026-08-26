@@ -951,6 +951,19 @@ body {
 	font-weight: 600;
 }
 
+/* Re-inspection banner (green) — reuses .ami-edit-banner base. Deliberately
+   NOT the amber new-tenant colour: this one says "you are recording a new
+   visit", which is the ordinary path, not a caution. */
+.ami-followup-banner {
+	background: #e6f4ea;
+	color: #1e6b3a;
+	border-color: #bfe3cb;
+	margin-bottom: 12px;
+}
+.ami-followup-start {
+	margin-top: 10px;
+}
+
 /* New-tenant exemption banner (amber) — reuses .ami-edit-banner base. */
 .ami-new-tenant-banner {
 	background: #fff1d6;

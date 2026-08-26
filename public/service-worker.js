@@ -76,7 +76,14 @@
 // one box that feeds both the List and the Map (adds js/services/plot-search.js).
 // The Map opens on the lowest-numbered match, so searching a tenant who holds
 // B15, B17 and B19 lands on B15.
-const VERSION = 'v33';
+// 'v34' a re-inspection can be recorded in the field. A plot that already had
+// a finding always opened for EDIT, so the only thing the app could do to an
+// inspected plot was overwrite it — the result the notice was served on — while
+// showing the inspector the work order and inviting them to record against it.
+// Visit 2 is now its own route (/round/:r/plot/:p/follow-up), the editor names
+// which visit it is showing, and the editor opens the LATEST visit rather than
+// whichever row the database happened to return first.
+const VERSION = 'v34';
 const SHELL_CACHE = `ami-shell-${VERSION}`;
 const RUNTIME_CACHE = `ami-runtime-${VERSION}`;
 const TILE_CACHE = `ami-tiles-${VERSION}`;

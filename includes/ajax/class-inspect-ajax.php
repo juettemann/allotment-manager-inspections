@@ -794,10 +794,87 @@ final class Inspect_Ajax {
 	}
 
 	/**
+	 * The most recent visit recorded on this plot in this round, if any.
+	 *
+	 * The one the editor opens for correction. This was `LIMIT 1` with no
+	 * ordering, over a table that has held one row per VISIT since #883 — so on
+	 * a plot inspected twice the database was free to return either, and in
+	 * practice returned the primary. An inspector correcting the re-inspection
+	 * would silently have edited the original instead: both rows carry the same
+	 * plot, round and tenant, and nothing on the screen named which was which.
+	 *
+	 * @since #50
+	 *
+	 * @param int $round_id Round ID.
+	 * @param int $plot_id  Plot ID.
+	 * @return object|null Finding row, or null when the plot is uninspected.
+	 */
+	public static function latest_finding( int $round_id, int $plot_id ): ?object {
+		global $wpdb;
+		$findings_table = $wpdb->prefix . 'am_inspection_findings';
+
+		$row = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT
+					id, visit_sequence, voided_at,
+					compliance_category, compliance_status, findings_summary, committee_notes, requires_followup,
+					has_rubbish, has_overgrown_weeds, has_uncultivated_areas,
+					has_derelict_structures, has_tenancy_breach, tenancy_breach_description,
+					inspector_user_ids, inspector_names, created_at, updated_at
+				FROM {$findings_table}
+				WHERE plot_id = %d AND round_id = %d
+				ORDER BY visit_sequence DESC, id DESC
+				LIMIT 1",
+				$plot_id,
+				$round_id
+			)
+		);
+
+		return $row ?: null;
+	}
+
+	/**
+	 * Whether a re-inspection can be recorded on this plot right now.
+	 *
+	 * Until #50 the app could not record one at all. A plot that already had a
+	 * finding opened for EDIT and nothing else, so an inspector doing the
+	 * re-inspection in the field would have overwritten the primary result — the
+	 * record the notice was served on — while this same screen showed them the
+	 * work order and invited them to record against it. The server always
+	 * accepted the second visit; only the way in was missing.
+	 *
+	 * Visit 1 only. Inspection_Finding::create_finding() infers the visit and
+	 * caps that inference at 2, so a third comes back as `duplicate_finding` —
+	 * offering it would be a dead end. A voided finding means the tenancy ended
+	 * mid-round and the plot is out of scope. The vacant and own-plot cases are
+	 * the same bars the editor already applies to a first finding, and a
+	 * follow-up is a new finding.
+	 *
+	 * @since #50
+	 *
+	 * @param object|null $finding     Latest visit, or null when uninspected.
+	 * @param int         $member_id   Effective holder, 0 when vacant.
+	 * @param bool        $is_own_plot Whether the viewer holds this plot.
+	 * @return bool
+	 */
+	public static function follow_up_available( ?object $finding, int $member_id, bool $is_own_plot ): bool {
+		if ( null === $finding || $member_id <= 0 || $is_own_plot ) {
+			return false;
+		}
+
+		if ( ! empty( $finding->voided_at ) ) {
+			return false;
+		}
+
+		return 1 === (int) $finding->visit_sequence;
+	}
+
+	/**
 	 * GET ?action=am_inspect_get_plot&plot_id=N&round_id=M
 	 *
-	 * Returns a single plot's detail + any finding already recorded in this
-	 * round + photos attached to that finding.
+	 * Returns a single plot's detail + the latest finding recorded in this round
+	 * + the photos attached to that finding, and whether a re-inspection can be
+	 * recorded here.
 	 *
 	 * @return void
 	 */
@@ -841,20 +918,7 @@ final class Inspect_Ajax {
 			\wp_send_json_error( [ 'message' => \__( 'Plot not found.', 'allotment-manager-inspections' ) ], 404 );
 		}
 
-		$finding = $wpdb->get_row(
-			$wpdb->prepare(
-				"SELECT
-					id, compliance_category, compliance_status, findings_summary, committee_notes, requires_followup,
-					has_rubbish, has_overgrown_weeds, has_uncultivated_areas,
-					has_derelict_structures, has_tenancy_breach, tenancy_breach_description,
-					inspector_user_ids, inspector_names, created_at, updated_at
-				FROM {$findings_table}
-				WHERE plot_id = %d AND round_id = %d
-				LIMIT 1",
-				$plot_id,
-				$round_id
-			)
-		);
+		$finding = self::latest_finding( $round_id, $plot_id );
 
 		$photos = $finding ? self::finding_photos( (int) $finding->id ) : [];
 
@@ -932,6 +996,10 @@ final class Inspect_Ajax {
 					'hasDerelictStructures'   => null === $finding->has_derelict_structures  ? null : (bool) $finding->has_derelict_structures,
 					'hasTenancyBreach'        => null === $finding->has_tenancy_breach       ? null : (bool) $finding->has_tenancy_breach,
 					'tenancyBreachDescription' => $finding->tenancy_breach_description,
+					// Which visit this is. The app labels the screen with it and
+					// decides from it whether it is correcting a result or
+					// recording a new one.
+					'visitSequence' => (int) $finding->visit_sequence,
 						'canEdit'    => $can_edit,
 						'recordedBy' => $recorded_by,
 						'hasNotice'  => $has_notice,
@@ -944,6 +1012,12 @@ final class Inspect_Ajax {
 				// The inspector cannot verify that required work was done without
 				// it (#43).
 				'previousFinding' => self::previous_finding( $round_id, $plot_id ),
+				// Whether the app may offer to record the re-inspection.
+				'followUpAvailable' => self::follow_up_available(
+					$finding,
+					$effective_member_id,
+					self::holder_is_current_user( $row )
+				),
 			]
 		);
 	}
