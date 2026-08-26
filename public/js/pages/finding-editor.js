@@ -179,11 +179,17 @@ export async function render({ roundId, plotId, mode }, { mount, navigate }) {
 	}
 
 	if (followUpRefused) {
+		// Two different refusals, and they land on two different screens. Said
+		// as one sentence it described neither: a plot with no finding gets a
+		// blank FIRST-inspection form, not "the recorded result".
 		const fr = document.createElement('div');
 		fr.className = 'ami-edit-banner ami-edit-banner--readonly';
-		fr.innerHTML = '<strong>No follow-up to record here</strong><br>'
-			+ 'Either this plot has not been inspected yet in this round, or both visits are already on the record. '
-			+ 'Showing the recorded result instead.';
+		fr.innerHTML = existing
+			? '<strong>No follow-up to record here</strong><br>'
+				+ 'Both visits are already on the record, or this plot is out of scope for the round. '
+				+ 'Showing the visit that stands.'
+			: '<strong>Nothing to follow up yet</strong><br>'
+				+ 'This plot has not been inspected in this round, so what you record below is its first visit.';
 		main.appendChild(fr);
 	}
 
