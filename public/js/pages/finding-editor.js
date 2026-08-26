@@ -16,7 +16,7 @@ import { renderHeader } from '../components/header.js';
 
 const s = window.amiData.strings;
 
-export async function render({ roundId, plotId }, { mount, navigate }) {
+export async function render({ roundId, plotId, mode }, { mount, navigate }) {
 	mount.innerHTML = '';
 	roundId = parseInt(roundId, 10);
 	plotId = parseInt(plotId, 10);
@@ -34,8 +34,30 @@ export async function render({ roundId, plotId }, { mount, navigate }) {
 	}
 
 	const plot = data.plot;
-	const existing = data.finding;
-	const existingPhotos = data.photos || [];
+
+	// Recording the re-inspection, rather than correcting what is on the record.
+	//
+	// Until #50 there was no such mode: a plot with a finding always opened for
+	// EDIT, so an inspector standing on the plot doing the re-inspection would
+	// have overwritten the primary result — the record the notice was served on
+	// — while this screen showed them the work order and invited them to record
+	// against it. The server always supported the second visit; only the way in
+	// was missing.
+	const wantsFollowUp = mode === 'follow-up';
+	const followUpAvailable = !!data.followUpAvailable;
+	const followUp = wantsFollowUp && followUpAvailable;
+	const followUpRefused = wantsFollowUp && !followUpAvailable;
+
+	// In follow-up mode there is no existing finding: what is recorded is the
+	// work order, not a draft of this visit. Everything downstream keys off
+	// `existing` — including the vacant and own-plot stops, which is right,
+	// because those bar a NEW finding and a follow-up is one.
+	const existing = followUp ? null : data.finding;
+
+	// Likewise the photographs: visit 1's belong to visit 1. Showing them here
+	// would read as "already taken" and lose the before-and-after that is the
+	// whole point of re-inspecting.
+	const existingPhotos = followUp ? [] : (data.photos || []);
 
 	// Vacant plots are not inspectable — there's no tenant, and the server
 	// requires a member to record a finding (it would fail + stick in the
@@ -140,15 +162,38 @@ export async function render({ roundId, plotId }, { mount, navigate }) {
 	// without it they are judging the plot on its own, not against a work order.
 	// Rendered above the form, collapsed by default so it informs without
 	// pushing the actual controls off a phone screen.
-	if (data.previousFinding) {
+	// Only where it IS a work order: on the re-inspection, or when correcting
+	// one. In plain edit mode on visit 1 the "previous finding" is the very row
+	// being edited, shown twice.
+	if (data.previousFinding && (followUp || (existing && existing.visitSequence > 1))) {
 		main.appendChild(renderPreviousFinding(data.previousFinding));
+	}
+
+	if (followUp) {
+		const fu = document.createElement('div');
+		fu.className = 'ami-edit-banner ami-followup-banner';
+		fu.innerHTML = '<strong>Re-inspection — visit 2</strong><br>'
+			+ 'This is a new visit, recorded alongside the first one. It does not change what the first visit found, '
+			+ 'which is shown above as the work order.';
+		main.appendChild(fu);
+	}
+
+	if (followUpRefused) {
+		const fr = document.createElement('div');
+		fr.className = 'ami-edit-banner ami-edit-banner--readonly';
+		fr.innerHTML = '<strong>No follow-up to record here</strong><br>'
+			+ 'Either this plot has not been inspected yet in this round, or both visits are already on the record. '
+			+ 'Showing the recorded result instead.';
+		main.appendChild(fr);
 	}
 
 	// Existing finding: show who recorded it + the edit affordance / warning.
 	if (existing) {
 		const banner = document.createElement('div');
 		banner.className = 'ami-edit-banner' + (canEditFinding ? '' : ' ami-edit-banner--readonly');
-		let html = '<strong>Existing inspection</strong>';
+		// Name the visit. Two visits in a round carry the same plot, round and
+		// tenant, so without this the screen cannot say which one it is showing.
+		let html = '<strong>' + (existing.visitSequence > 1 ? 'Re-inspection (visit 2)' : 'First inspection (visit 1)') + '</strong>';
 		if (existing.recordedBy) html += ' · recorded by ' + escapeHtml(existing.recordedBy);
 		if (existing.edited) html += ' · <em>edited</em>';
 		html += '<br>';
@@ -161,6 +206,18 @@ export async function render({ roundId, plotId }, { mount, navigate }) {
 		}
 		banner.innerHTML = html;
 		main.appendChild(banner);
+
+		// The way in to the re-inspection. Offered whether or not this inspector
+		// may EDIT the first visit: recording a new one is their own work, and
+		// the server re-checks the cap on save either way.
+		if (followUpAvailable) {
+			const go = document.createElement('button');
+			go.type = 'button';
+			go.className = 'ami-btn ami-btn--secondary ami-followup-start';
+			go.textContent = 'Record follow-up visit';
+			go.addEventListener('click', () => navigate('/round/' + roundId + '/plot/' + plotId + '/follow-up'));
+			main.appendChild(go);
+		}
 	}
 
 	// --- Photos ---
@@ -423,7 +480,7 @@ export async function render({ roundId, plotId }, { mount, navigate }) {
 	const saveBar = document.createElement('div');
 	saveBar.className = 'ami-save-bar';
 	if (canEditFinding) {
-		const label = existing ? 'Update finding' : s.save;
+		const label = existing ? 'Update finding' : (followUp ? 'Save re-inspection' : s.save);
 		saveBar.innerHTML = `<button type="button" class="ami-btn" id="ami-save">${escapeHtml(label)}</button>`;
 	} else {
 		saveBar.innerHTML = `<div class="ami-save-readonly">Read-only — you can’t change this finding.</div>`;

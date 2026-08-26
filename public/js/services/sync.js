@@ -38,7 +38,7 @@ export function getLastError() { return lastError; }
 // release after that told the inspector it was running July's code and no one
 // could tell a stale phone from a current one. Test_Build_Tag now fails the
 // suite when this and AMI_VERSION disagree — bump BOTH or neither.
-export const BUILD = '1.8.0';
+export const BUILD = '1.9.0';
 
 /**
  * Full queue snapshot for the on-screen diagnostic (tap the status pill).
